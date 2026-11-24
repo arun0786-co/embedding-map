@@ -84,8 +84,8 @@ def assign(x, c, block=65536):
     return out
 
 
-def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, qblock=2048, cblock=262144,
-            seed=0, stats=None):
+def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, qblock=1024, cblock=65536,
+            seed=0, stats=None, half=True):
     """Approximate k nearest neighbours: k-means splits the points into
     `lists` cells; the points of a cell search the points of the `probe`
     cells whose centroids are nearest to that cell's centroid. About
@@ -93,7 +93,9 @@ def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, 
 
     Returns the same as knn(). Points whose true neighbours sit in cells
     that were not searched get worse neighbours: measure recall against
-    knn() on a sample (bench/knn_recall.py)."""
+    knn() on a sample (atlas.build_arxiv does). half: keep the points in
+    float16 for the matrix products (half the memory: 3.3M x 384 is 2.5 GB
+    instead of 5); squared norms and distances stay float32."""
     dev = device or default_device()
     x = torch.as_tensor(x, dtype=torch.float32, device=dev)
     if metric == "cosine":
@@ -110,6 +112,10 @@ def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, 
     cc = (cent * cent).sum(1)
     near = torch.topk(-(cc[:, None] + cc[None] - 2 * cent @ cent.T), min(probe, lists), dim=1).indices
     sq = (x * x).sum(1)
+    if half:
+        x = x.half()
+        if dev == "mps":
+            torch.mps.empty_cache()
     out_i = torch.empty(n, k, dtype=torch.int64, device=dev)
     out_d = torch.empty(n, k, dtype=torch.float32, device=dev)
     starts_l, counts_l, near_l = starts.tolist(), counts.tolist(), near.tolist()
@@ -126,8 +132,8 @@ def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, 
             best_i = torch.zeros((len(q), k), dtype=torch.int64, device=dev)
             for c0 in range(0, len(ci), cblock):
                 cand = ci[c0:c0 + cblock]
-                d = (sq[q, None] + sq[None, cand] - 2 * x[q] @ x[cand].T).clamp_min_(0)
-                d = torch.where(q[:, None] == cand[None], torch.full_like(d, float("inf")), d)
+                d = (x[q] @ x[cand].T).float().mul_(-2).add_(sq[q, None]).add_(sq[None, cand]).clamp_min_(0)
+                d.masked_fill_(q[:, None] == cand[None], float("inf"))
                 kk = min(k, len(cand))
                 cd, pos = torch.topk(d, kk, dim=1, largest=False)
                 best_d, p2 = torch.topk(torch.cat([best_d, cd], 1), k, dim=1, largest=False)
