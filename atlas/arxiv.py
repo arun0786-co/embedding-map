@@ -29,10 +29,11 @@ GROUPS = {
 NAMES = sorted(set(GROUPS.values()))
 
 _ws = re.compile(r"\s+")
+_accent = re.compile(r"""\\[\"'`^~=.uvHc]\s*\{?\\?([A-Za-z])\}?""")  # Schr\"odinger, Erd\H{o}s, \'{\i}
 
 
 def clean(s):
-    return _ws.sub(" ", s).strip()
+    return _ws.sub(" ", _accent.sub(r"\1", s)).strip()
 
 
 def read(path, limit=None):
