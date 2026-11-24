@@ -73,9 +73,12 @@ def main():
     rows = stage("parse s", parse)
     ids, titles, abstracts, cat, year, primary = map(list, zip(*rows))
     cat, year = np.array(cat), np.array(year)
-    print(f"{len(rows):,} papers, {year.min()} to {year.max()}", flush=True)
+    print(f"{len(rows):,} papers, {year.min()} to {year.max()}", flush=True)  # noqa
+    n = len(rows)
     texts = [f"{ti}. {ab}" for ti, ab in zip(titles, abstracts)]
+    del rows, abstracts  # several GB at full size
     emb = stage("embed s", lambda: embed(texts, os.path.join(cache, "emb")))
+    del texts
 
     def neighbours():
         p = os.path.join(cache, f"knn_p{a.probe}.npz")
@@ -112,10 +115,10 @@ def main():
     xy = stage("layout s", layout)
     labels = stage("labels s", lambda: make_labels(xy, titles, device=dev))
     stage("export s", lambda: export(a.out, xy, cat, year, titles, arxiv.NAMES, labels,
-                                     name=f"arXiv, {len(rows):,} papers", ids=ids, link="https://arxiv.org/abs/"))
+                                     name=f"arXiv, {n:,} papers", ids=ids, link="https://arxiv.org/abs/"))
     os.makedirs("results", exist_ok=True)
     with open(f"results/{tag}_build.json", "w") as f:
-        json.dump({"papers": len(rows), "years": [int(year.min()), int(year.max())], "seconds": t,
+        json.dump({"papers": n, "years": [int(year.min()), int(year.max())], "seconds": t,
                    "knn": {**kst, "recall@15": round(rec, 4)},
                    "machine": {"chip": platform.machine(), "torch": torch.__version__, "device": dev,
                                "load": os.getloadavg()[0]}}, f, indent=1)
