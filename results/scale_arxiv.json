@@ -1,0 +1,103 @@
+{
+ "machine": {
+  "chip": "arm64",
+  "torch": "2.15.0",
+  "cpus": 12,
+  "load": 9.6484375
+ },
+ "rows": [
+  {
+   "n": 100000,
+   "method": "this repo (mps), 200 epochs",
+   "seconds": 7.9,
+   "knn": "exact",
+   "knn s": 4.98,
+   "graph s": 0.04,
+   "optimize s": 2.85,
+   "edges": 2251146,
+   "neighbours kept": 0.101,
+   "trustworthiness": 0.9201
+  },
+  {
+   "n": 100000,
+   "method": "this repo (mps), 500 epochs",
+   "seconds": 10.5,
+   "knn": "exact",
+   "knn s": 4.6,
+   "graph s": 0.05,
+   "optimize s": 5.88,
+   "edges": 2251146,
+   "neighbours kept": 0.109,
+   "trustworthiness": 0.9256
+  },
+  {
+   "n": 100000,
+   "method": "umap-learn 0.6.0 (12 cores), 200 epochs",
+   "seconds": 13.6,
+   "neighbours kept": 0.096,
+   "trustworthiness": 0.9261
+  },
+  {
+   "n": 300000,
+   "method": "this repo (mps), 200 epochs",
+   "seconds": 9.8,
+   "knn": "ivf, probe 32",
+   "knn s": 3.34,
+   "graph s": 0.1,
+   "optimize s": 6.33,
+   "edges": 6948658,
+   "neighbours kept": 0.075,
+   "trustworthiness": 0.9262
+  },
+  {
+   "n": 300000,
+   "method": "this repo (mps), 500 epochs",
+   "seconds": 19.9,
+   "knn": "ivf, probe 32",
+   "knn s": 3.45,
+   "graph s": 0.13,
+   "optimize s": 16.33,
+   "edges": 6948658,
+   "neighbours kept": 0.079,
+   "trustworthiness": 0.9342
+  },
+  {
+   "n": 300000,
+   "method": "umap-learn 0.6.0 (12 cores), 200 epochs",
+   "seconds": 15.3,
+   "neighbours kept": 0.069,
+   "trustworthiness": 0.9267
+  },
+  {
+   "n": 1000000,
+   "method": "this repo (mps), 200 epochs",
+   "seconds": 37.3,
+   "knn": "ivf, probe 32",
+   "knn s": 16.31,
+   "graph s": 0.38,
+   "optimize s": 20.65,
+   "edges": 23537162,
+   "neighbours kept": 0.048,
+   "trustworthiness": 0.9325
+  },
+  {
+   "n": 1000000,
+   "method": "this repo (mps), 500 epochs",
+   "seconds": 68.2,
+   "knn": "ivf, probe 32",
+   "knn s": 16.17,
+   "graph s": 0.42,
+   "optimize s": 51.6,
+   "edges": 23537162,
+   "neighbours kept": 0.053,
+   "trustworthiness": 0.9349
+  },
+  {
+   "n": 1000000,
+   "method": "umap-learn 0.6.0 (12 cores), 200 epochs",
+   "seconds": 58.3,
+   "neighbours kept": 0.045,
+   "trustworthiness": 0.926
+  }
+ ]
+}

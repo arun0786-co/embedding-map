@@ -3,34 +3,35 @@
   "chip": "arm64",
   "torch": "2.15.0",
   "cpus": 12,
-  "load": 10.8544921875
+  "load": 2.626953125
  },
- "exact knn s": 7.48,
+ "exact knn s": 3.66,
  "rows": [
   {
    "method": "this repo, GPU (mps)",
-   "seconds": 17.7,
-   "knn s": 9.2,
-   "graph s": 0.11,
-   "optimize s": 8.42,
+   "seconds": 7.8,
+   "knn": "exact",
+   "knn s": 3.57,
+   "graph s": 0.03,
+   "optimize s": 4.22,
    "edges": 1552890,
    "neighbours kept": 0.124,
-   "2D kNN accuracy": 0.9698,
-   "trustworthiness": 0.9499
+   "2D kNN accuracy": 0.9701,
+   "trustworthiness": 0.9517
   },
   {
    "method": "umap-learn 0.6.0, init=spectral",
-   "seconds": 20.1,
+   "seconds": 14.9,
    "neighbours kept": 0.119,
-   "2D kNN accuracy": 0.97,
-   "trustworthiness": 0.9507
+   "2D kNN accuracy": 0.9696,
+   "trustworthiness": 0.9519
   },
   {
    "method": "umap-learn 0.6.0, init=pca",
-   "seconds": 5.1,
+   "seconds": 3.7,
    "neighbours kept": 0.118,
-   "2D kNN accuracy": 0.9692,
-   "trustworthiness": 0.9513
+   "2D kNN accuracy": 0.9693,
+   "trustworthiness": 0.9514
   }
  ]
 }
