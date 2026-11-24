@@ -27,6 +27,32 @@ Grouping by cell keeps the work in large matrix products, which suits a GPU. Wit
 
 The cost of grouping is that a point near the edge of its cell searches the cells near its *cell's* centre, not near itself, and may miss a neighbour just across a border. Recall is measured, never assumed. The build compares the found neighbours of 2,000 random papers with an exact search and records the fraction in `results/`. On MNIST, probe 16 gives 0.935 and probe 32 gives 0.972, in about 1 s.
 
+**Where the time went.** The first IVF version needed 51 s at 1M points, while umap-learn's whole run (its own neighbour search plus layout) took 60 s on 12 CPU cores. The matrix products are about 2.5e13 flops, roughly 2 s on this GPU, so nearly all of the 51 s was elsewhere. Timing one block of 1,024 queries against 32,768 candidates:
+
+| step | before | after |
+|---|---|---|
+| float16 matrix product | 4.5 ms | 4.5 ms |
+| to float32, add norms | 9.5 ms | gone |
+| mask each query's own index | 3.2 ms | gone |
+| top 15 | 16.2 ms | 3.7 ms |
+
+- **Rank by a score.** For unit vectors the dot product orders candidates the same way as the distance, so the block stays in float16 and the distance is computed only for the 15 winners.
+- **Drop the query itself afterwards.** Keep 16 candidates and remove the query's own index from the merged list, instead of comparing 33M index pairs per block.
+- **Top-k in two stages.** `torch.topk` along a 32,768-wide row is slow on MPS. Taking the top 15 of every group of 256 columns, then the top 15 of those, gives exactly the same answer, since a row's 15 largest values are each among the 15 largest of their own group. It is 3.3x faster.
+
+Together: 51.6 s to 16.4 s at 1M points, recall unchanged (0.877 and 0.878). The same two-stage top-k makes the exact search 2.6x faster (100k points: 10.8 s to 4.1 s).
+
+**How good is umap-learn's neighbour search?** pynndescent, called with the arguments umap-learn passes it, finds 92.2% of the true 15 neighbours at 1M points in 22.8 s on 12 cores. umap-learn counts each point as its own first neighbour, so 93.3% is its ceiling. The IVF search trades recall for time through `probe`:
+
+| probe (of 1,000 cells) | time, 1M points | recall@15 |
+|---|---|---|
+| 16 | 9.4 s | 0.801 |
+| 32 | 16.4 s | 0.878 |
+| 64 | 28.3 s | 0.935 |
+| 128 | 52.5 s | 0.970 |
+
+So on neighbour search a laptop GPU with brute force inside cells roughly ties a well-tuned graph method on a 12-core CPU. The GPU does not win by default; it wins only where the work is large dense products.
+
 **Memory, the hard part at 3.26M.** The first full runs died: one with an MPS out-of-memory error, one with the Mac swapping 11 GB until it had to be restarted. The live tensors were small (1.4 GB at 1.2M points); what the GPU driver held was not. Three causes, each measured with `torch.mps.driver_allocated_memory()`:
 
 1. **A new shape every cell.** Each cell has a different number of points and candidates, so every distance block had a new size, and the caching allocator kept a buffer for each. At 400k points the driver held 14.1 GB. Rounding blocks up to multiples of 256 queries and 8,192 candidates, and masking the padding with infinity, leaves a few dozen shapes: 3.3 GB.
@@ -57,6 +83,8 @@ umap-learn applies these updates one edge at a time, each from the latest positi
 **The difference matters.** A point with 30 edges due in an epoch gets 30 pulls computed from the same stale positions, and they add up. At umap-learn's learning rate of 1 that overshoots: on MNIST the 2D kNN accuracy was 0.939 against umap-learn's 0.970. A rate of 0.25 over 500 epochs brought it to 0.970, with trustworthiness 0.950 against 0.951 (`bench/quality.py`, `results/quality_mnist.json`). Batched GPU implementations face the same race; the fix is a smaller step and more epochs.
 
 **Memory.** Each epoch's edges are processed in chunks of 4M, so tens of millions of edges fit.
+
+**Random numbers on the right device.** The negative samples were first drawn with a CPU generator and copied over: 37 ms of a roughly 140 ms epoch at 1M points, against 11 ms when drawn on the GPU. On MNIST that halved the layout time (8.4 s to 4.2 s) with the same quality.
 
 ## 3. Labels (`labels.py`)
 
