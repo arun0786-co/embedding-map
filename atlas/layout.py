@@ -76,11 +76,24 @@ def fuzzy_graph(idx, dist, iters=64):
     return uniq // n, uniq % n, ws
 
 
-def pca_init(x, dims=2, scale=10.0, device=None):
-    x = torch.as_tensor(x, dtype=torch.float32, device=device)
-    x = x - x.mean(0)
-    _, _, v = torch.pca_lowrank(x, q=dims, center=False)
-    y = x @ v[:, :dims]
+def pca_init(x, dims=2, scale=10.0, device=None, block=262144):
+    """Top principal components from the d x d covariance, accumulated in
+    float64 over row blocks: exact, and never more than one block of the
+    points on the device in float32 (the whole of 3.3M x 384 would be 5 GB)."""
+    x = x if torch.is_tensor(x) else torch.from_numpy(x)
+    n, d = x.shape
+    s = torch.zeros(d, dtype=torch.float64)
+    g = torch.zeros(d, d, dtype=torch.float64)
+    for i in range(0, n, block):
+        b = x[i:i + block].to(device).float()
+        s += b.sum(0).cpu().double()
+        g += (b.T @ b).cpu().double()
+    mean = s / n
+    cov = g / n - torch.outer(mean, mean)
+    _, vec = torch.linalg.eigh(cov)
+    v = vec[:, -dims:].flip(1).float().to(device)
+    mean = mean.float().to(device)
+    y = torch.cat([(x[i:i + block].to(device).float() - mean) @ v for i in range(0, n, block)])
     return y / y.abs().max() * scale
 
 
