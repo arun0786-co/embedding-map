@@ -335,8 +335,23 @@ async function main() {
   // pan and zoom
   const cv = a.canvas;
   let drag = null;
-  cv.addEventListener("pointerdown", (e) => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
-  cv.addEventListener("pointerup", () => { drag = null; });
+  let down = null;
+  cv.addEventListener("pointerdown", (e) => {
+    drag = [e.clientX, e.clientY];
+    down = [e.clientX, e.clientY];
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener("pointerup", async (e) => {
+    drag = null;
+    // a click, not a drag: open the point's page if the data has links
+    if (meta.link && down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 4) {
+      const i = a.nearest(e.clientX * a.dpr, e.clientY * a.dpr, 8 * a.dpr);
+      if (i >= 0) {
+        const entry = await a.title(i);
+        if (Array.isArray(entry)) window.open(meta.link + entry[1], "_blank", "noopener");
+      }
+    }
+  });
   cv.addEventListener("pointermove", (e) => {
     if (drag) {
       const s = Math.min(a.w, a.h) * a.view.zoom / a.dpr;
@@ -370,8 +385,9 @@ async function main() {
     if (seq !== hoverSeq) return;
     const c = meta.categories[a.raw[i * 6 + 4]];
     tip.innerHTML = `<div></div><div class="meta"></div>`;
-    tip.children[0].textContent = text;
-    tip.children[1].textContent = `${c.name} · ${meta.year0 + a.raw[i * 6 + 5]}`;
+    const [title, id] = Array.isArray(text) ? text : [text, null];
+    tip.children[0].textContent = title;
+    tip.children[1].textContent = `${c.name} · ${meta.year0 + a.raw[i * 6 + 5]}${id ? " · " + id + " · click to open" : ""}`;
     tip.style.display = "block";
     tip.style.left = Math.min(cx + 14, innerWidth - 380) + "px";
     tip.style.top = cy + 14 + "px";
