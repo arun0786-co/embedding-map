@@ -36,7 +36,7 @@ On MNIST (70,000 points, `results/quality_mnist.json`) the layout matches umap-l
 
 The first version was slower than umap-learn at every size. How it got faster, and why batched UMAP needs a smaller learning rate than umap-learn's, is in [docs/how-it-works.md](docs/how-it-works.md).
 
-**Rendering** (`results/render_*.json`, Chrome, 3024 × 1602, 120 Hz display, 8 s of continuous zoom and pan):
+**Rendering** (`results/render_*.json`, Chrome on a 3024 × 1600-1700 canvas, 120 Hz display, 8 s of continuous zoom and pan; the synthetic runs were taken while other jobs held the CPU):
 
 | points | load | median frame | 95th percentile | fps |
 |---|---|---|---|---|
