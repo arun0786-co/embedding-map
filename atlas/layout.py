@@ -115,7 +115,9 @@ def optimize(rows, cols, w, init, n_epochs=500, a=1.577, b=0.895, negative=5, lr
     rows, cols, w = rows[keep], cols[keep], w[keep]
     eps = w.max() / w  # epochs between samples of each edge
     nxt = eps.clone()
-    g = torch.Generator(device="cpu").manual_seed(seed)
+    # negative samples drawn on the device: drawing them on the CPU and
+    # copying was a quarter of each epoch at 1M points
+    g = torch.Generator(device=dev).manual_seed(seed)
     for e in range(n_epochs):
         alpha = lr * (1.0 - e / n_epochs)
         act = (nxt <= e + 1).nonzero().squeeze(1)
@@ -133,7 +135,7 @@ def optimize(rows, cols, w, init, n_epochs=500, a=1.577, b=0.895, negative=5, lr
             y.index_add_(0, j, -grad)
             # negative samples: pushed away from random points
             ii = i.repeat(negative)
-            kk = torch.randint(0, n, (len(ii),), generator=g).to(dev)
+            kk = torch.randint(0, n, (len(ii),), generator=g, device=dev)
             diff = y[ii] - y[kk]
             d2 = (diff * diff).sum(1, keepdim=True)
             coef = 2 * gamma * b / ((0.001 + d2) * (a * d2.pow(b) + 1))
