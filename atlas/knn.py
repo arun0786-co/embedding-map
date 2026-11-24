@@ -130,25 +130,46 @@ def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, 
     out_d = torch.empty(n, k, dtype=torch.float32, device=dev)
     starts_l, counts_l, near_l = starts.tolist(), counts.tolist(), near.tolist()
     searched = 0
+
+    def padded(idx, g):
+        # Every cell has a different size, and a caching allocator (MPS's
+        # especially) keeps a buffer for every distinct shape it has seen:
+        # unpadded, 3.3M points grew the process past 27 GB. Rounding up to a
+        # multiple of g leaves a few dozen shapes; the padding is masked.
+        m = -(-len(idx) // g) * g
+        return torch.cat([idx, idx.new_zeros(m - len(idx))]) if m > len(idx) else idx
+
+    qg, cg = min(256, qblock), min(8192, cblock)
     for c in range(lists):
         if counts_l[c] == 0:
             continue
+        # Nothing in this loop waits for the GPU, so without a sync the CPU
+        # queues hundreds of cells ahead, each holding its temporaries.
+        sync(dev)
+        if dev == "mps" and c % 64 == 63:
+            torch.mps.empty_cache()  # the small index tensors still vary in size
         qi = order[starts_l[c]:starts_l[c] + counts_l[c]]
         ci = torch.cat([order[starts_l[p]:starts_l[p] + counts_l[p]] for p in near_l[c]])
         searched += len(qi) * len(ci)
         for q0 in range(0, len(qi), qblock):
             q = qi[q0:q0 + qblock]
+            nq = len(q)
+            q = padded(q, qg)
             best_d = torch.full((len(q), k), float("inf"), device=dev)
             best_i = torch.zeros((len(q), k), dtype=torch.int64, device=dev)
             for c0 in range(0, len(ci), cblock):
                 cand = ci[c0:c0 + cblock]
+                nc = len(cand)
+                cand = padded(cand, cg)
                 d = (x[q] @ x[cand].T).float().mul_(-2).add_(sq[q, None]).add_(sq[None, cand]).clamp_min_(0)
                 d.masked_fill_(q[:, None] == cand[None], float("inf"))
-                kk = min(k, len(cand))
+                if nc < len(cand):
+                    d[:, nc:] = float("inf")
+                kk = min(k, nc)
                 cd, pos = torch.topk(d, kk, dim=1, largest=False)
                 best_d, p2 = torch.topk(torch.cat([best_d, cd], 1), k, dim=1, largest=False)
                 best_i = torch.gather(torch.cat([best_i, cand[pos]], 1), 1, p2)
-            out_i[q], out_d[q] = best_i, best_d
+            out_i[q[:nq]], out_d[q[:nq]] = best_i[:nq], best_d[:nq]
     if stats is not None:
         stats.update({"lists": lists, "probe": probe, "distances": searched, "fraction of n^2": searched / n / n})
     out_d = out_d / 2 if metric == "cosine" else out_d.sqrt()
