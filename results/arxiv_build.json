@@ -6,24 +6,24 @@
  ],
  "seconds": {
   "parse s": 1.6,
-  "embed s": 6.2,
-  "knn s": 0.1,
-  "recall check s": 5.4,
-  "layout s": 0.0,
-  "labels s": 151.8,
-  "export s": 6.6
+  "embed s": 6.1,
+  "knn s": 80.4,
+  "recall check s": 5.2,
+  "layout s": 167.5,
+  "labels s": 156.3,
+  "export s": 6.7
  },
  "knn": {
   "lists": 1806,
   "probe": 32,
   "distances": 203355964039,
   "fraction of n^2": 0.01911533596654743,
-  "recall@15": 0.8666
+  "recall@15": 0.8678
  },
  "machine": {
   "chip": "arm64",
   "torch": "2.15.0",
   "device": "mps",
-  "load": 1.17431640625
+  "load": 1.5615234375
  }
 }
