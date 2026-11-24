@@ -21,6 +21,15 @@ def clusters(xy, k, device=None, seed=0):
     return assign(x, c).cpu().numpy()
 
 
+def stem(w):
+    """Crude singular: galaxies -> galaxy, fields -> field, glass stays."""
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("s") and not w.endswith("ss") and len(w) > 3:
+        return w[:-1]
+    return w
+
+
 def name_clusters(titles, cl, k, terms=2, min_df=30):
     from sklearn.feature_extraction.text import CountVectorizer
 
@@ -39,7 +48,7 @@ def name_clusters(titles, cl, k, terms=2, min_df=30):
     # two-word terms name things better ("black holes" over "black"), so they
     # get a boost; a term sharing a word (plural or not) with a chosen one is skipped
     score = score * np.where(np.char.count(vocab.astype(str), " ") > 0, 1.6, 1.0)[None]
-    stems = [{w.rstrip("s") for w in t.split()} for t in vocab]
+    stems = [{stem(w) for w in t.split()} for t in vocab]
     names = []
     for c in range(k):
         best, used = [], set()
