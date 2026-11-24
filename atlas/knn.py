@@ -54,7 +54,8 @@ def knn(x, k, metric="cosine", device=None, qblock=2048, chunk=131072, half=Fals
                 r = torch.arange(lo, hi, device=dev)
                 d[r - q0, r - c0] = float("inf")
             kk = min(k, c1 - c0)
-            cd, ci = torch.topk(d, kk, dim=1, largest=False)
+            cd, ci = top_rows(d.neg_(), kk)  # top_rows takes the largest
+            cd = cd.neg_()
             best_d, pos = torch.topk(torch.cat([best_d, cd], 1), k, dim=1, largest=False)
             best_i = torch.gather(torch.cat([best_i, ci + c0], 1), 1, pos)
         out_i[q0:q1], out_d[q0:q1] = best_i, best_d
@@ -90,12 +91,17 @@ def top_rows(s, k, group=256):
     row's k largest are each among the k largest of their own group. On MPS,
     1024 x 32768 in float16 takes 3.7 ms against 12.2 ms in one call."""
     rows, cols = s.shape
-    if cols % group or cols < 2 * group or k > group:
+    main = cols - cols % group
+    if main < 2 * group or k > group:
         return torch.topk(s, k, dim=1)
-    v, i = torch.topk(s.view(rows, -1, group), k, dim=2)
-    i = i + torch.arange(0, cols, group, device=s.device)[None, :, None]
-    v, j = torch.topk(v.view(rows, -1), k, dim=1)
-    return v, torch.gather(i.view(rows, -1), 1, j)
+    v, i = torch.topk(s[:, :main].reshape(rows, -1, group), k, dim=2)
+    i = (i + torch.arange(0, main, group, device=s.device)[None, :, None]).view(rows, -1)
+    v = v.view(rows, -1)
+    if main < cols:  # the last, partial group
+        rv, ri = torch.topk(s[:, main:], min(k, cols - main), dim=1)
+        v, i = torch.cat([v, rv], 1), torch.cat([i, ri + main], 1)
+    v, j = torch.topk(v, k, dim=1)
+    return v, torch.gather(i, 1, j)
 
 
 def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, qblock=1024, cblock=65536,

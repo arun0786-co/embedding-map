@@ -70,7 +70,7 @@ def test_layout_separates_clusters():
 @pytest.mark.parametrize("dev", DEVICES)
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
 def test_two_stage_topk_is_exact(dev, dtype):
-    s = torch.randn(300, 4096, generator=torch.Generator().manual_seed(0)).to(dev, dtype)
+    s = torch.randn(300, 4096 + 77, generator=torch.Generator().manual_seed(0)).to(dev, dtype)  # a partial group
     s[:, 1000:1040] = float("-inf")  # padding, as ivf_knn masks it
     v, i = top_rows(s, 16)
     rv, _ = torch.topk(s, 16, dim=1)
