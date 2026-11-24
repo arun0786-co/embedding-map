@@ -300,14 +300,16 @@ async function main() {
   // categories
   const cats = $("cats");
   meta.categories.forEach((c, i) => {
+    if (!c.count) return;
     const row = document.createElement("div");
     row.className = "cat";
+    row.dataset.i = i;
     row.innerHTML = `<span class="sw" style="background:${c.color}"></span><span></span><span class="n">${c.count.toLocaleString()}</span>`;
     row.children[1].textContent = c.name;
     row.onclick = (e) => {
       if (e.altKey || e.metaKey) a.enabled = a.enabled.map((_, j) => j === i);
       else a.enabled[i] = !a.enabled[i];
-      cats.querySelectorAll(".cat").forEach((r, j) => r.classList.toggle("off", !a.enabled[j]));
+      cats.querySelectorAll(".cat").forEach((r) => r.classList.toggle("off", !a.enabled[+r.dataset.i]));
       a.uploadColors();
     };
     cats.appendChild(row);
