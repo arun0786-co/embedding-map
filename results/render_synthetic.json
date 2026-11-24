@@ -1,0 +1,8 @@
+{
+ "how": "web/index.html?data=<name>&bench=1 in Chrome, 8 s of continuous zoom (1x to 10x) and pan, frame gaps from requestAnimationFrame; window.benchResult copied here. Display refresh is 120 Hz, so 120 fps is the ceiling. The machine was running other CPU jobs (load average about 10).",
+ "runs": [
+  {"points": 3000000, "width": 3024, "height": 1602, "frames": 957, "fps": 119.5, "p50_ms": 8.3, "p95_ms": 9.1, "load_ms": 29, "mb": 18, "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)"},
+  {"points": 10000000, "width": 3024, "height": 1602, "frames": 765, "fps": 95.6, "p50_ms": 8.4, "p95_ms": 17.4, "load_ms": 141, "mb": 60, "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)"},
+  {"points": 20000000, "width": 3024, "height": 1602, "frames": 612, "fps": 76.2, "p50_ms": 8.4, "p95_ms": 33.7, "load_ms": 240, "mb": 120, "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)"}
+ ]
+}
