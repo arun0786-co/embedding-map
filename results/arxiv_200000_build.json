@@ -1,0 +1,26 @@
+{
+ "papers": 200000,
+ "years": [
+  2007,
+  2010
+ ],
+ "seconds": {
+  "parse s": 4.3,
+  "embed s": 195.7,
+  "knn s": 51.0,
+  "recall check s": 2.2,
+  "layout s": 20.1,
+  "labels s": 12.2,
+  "export s": 2.9
+ },
+ "knn": {
+  "exact": true,
+  "recall@15": 1.0
+ },
+ "machine": {
+  "chip": "arm64",
+  "torch": "2.15.0",
+  "device": "mps",
+  "load": 7.55322265625
+ }
+}
