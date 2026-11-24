@@ -61,3 +61,79 @@ def knn(x, k, metric="cosine", device=None, qblock=2048, chunk=131072, half=Fals
     if metric == "euclidean":
         out_d = out_d.sqrt()
     return out_i, out_d
+
+
+def kmeans(x, k, iters=12, seed=0, block=65536):
+    """Lloyd's algorithm on the GPU (euclidean). Returns centroids [k, d]."""
+    g = torch.Generator(device="cpu").manual_seed(seed)
+    c = x[torch.randperm(len(x), generator=g)[:k].to(x.device)].clone()
+    for _ in range(iters):
+        a = assign(x, c, block)
+        s = torch.zeros_like(c).index_add_(0, a, x)
+        cnt = torch.bincount(a, minlength=k).float()
+        empty = cnt == 0
+        c = torch.where(empty[:, None], c, s / cnt.clamp_min(1)[:, None])
+    return c
+
+
+def assign(x, c, block=65536):
+    cc = (c * c).sum(1)
+    out = torch.empty(len(x), dtype=torch.int64, device=x.device)
+    for i in range(0, len(x), block):
+        out[i:i + block] = (cc[None] - 2 * x[i:i + block] @ c.T).argmin(1)
+    return out
+
+
+def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, qblock=2048, cblock=262144,
+            seed=0, stats=None):
+    """Approximate k nearest neighbours: k-means splits the points into
+    `lists` cells; the points of a cell search the points of the `probe`
+    cells whose centroids are nearest to that cell's centroid. About
+    n * probe * n / lists distances instead of n^2.
+
+    Returns the same as knn(). Points whose true neighbours sit in cells
+    that were not searched get worse neighbours: measure recall against
+    knn() on a sample (bench/knn_recall.py)."""
+    dev = device or default_device()
+    x = torch.as_tensor(x, dtype=torch.float32, device=dev)
+    if metric == "cosine":
+        x = F.normalize(x, dim=1)  # then |a - b|^2 = 2 (1 - cos)
+    n = len(x)
+    lists = lists or max(1, int(n ** 0.5))
+    g = torch.Generator(device="cpu").manual_seed(seed)
+    sample = x[torch.randperm(n, generator=g)[:min(n, lists * train)].to(dev)]
+    cent = kmeans(sample, lists, seed=seed)
+    a = assign(x, cent)
+    order = torch.argsort(a)
+    counts = torch.bincount(a, minlength=lists)
+    starts = torch.cumsum(counts, 0) - counts
+    cc = (cent * cent).sum(1)
+    near = torch.topk(-(cc[:, None] + cc[None] - 2 * cent @ cent.T), min(probe, lists), dim=1).indices
+    sq = (x * x).sum(1)
+    out_i = torch.empty(n, k, dtype=torch.int64, device=dev)
+    out_d = torch.empty(n, k, dtype=torch.float32, device=dev)
+    starts_l, counts_l, near_l = starts.tolist(), counts.tolist(), near.tolist()
+    searched = 0
+    for c in range(lists):
+        if counts_l[c] == 0:
+            continue
+        qi = order[starts_l[c]:starts_l[c] + counts_l[c]]
+        ci = torch.cat([order[starts_l[p]:starts_l[p] + counts_l[p]] for p in near_l[c]])
+        searched += len(qi) * len(ci)
+        for q0 in range(0, len(qi), qblock):
+            q = qi[q0:q0 + qblock]
+            best_d = torch.full((len(q), k), float("inf"), device=dev)
+            best_i = torch.zeros((len(q), k), dtype=torch.int64, device=dev)
+            for c0 in range(0, len(ci), cblock):
+                cand = ci[c0:c0 + cblock]
+                d = (sq[q, None] + sq[None, cand] - 2 * x[q] @ x[cand].T).clamp_min_(0)
+                d = torch.where(q[:, None] == cand[None], torch.full_like(d, float("inf")), d)
+                kk = min(k, len(cand))
+                cd, pos = torch.topk(d, kk, dim=1, largest=False)
+                best_d, p2 = torch.topk(torch.cat([best_d, cd], 1), k, dim=1, largest=False)
+                best_i = torch.gather(torch.cat([best_i, cand[pos]], 1), 1, p2)
+            out_i[q], out_d[q] = best_i, best_d
+    if stats is not None:
+        stats.update({"lists": lists, "probe": probe, "distances": searched, "fraction of n^2": searched / n / n})
+    out_d = out_d / 2 if metric == "cosine" else out_d.sqrt()
+    return out_i, out_d
