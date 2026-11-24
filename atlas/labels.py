@@ -36,14 +36,18 @@ def name_clusters(titles, cl, k, terms=2, min_df=30):
     words = tf.sum(1, keepdims=True)
     idf = np.log(1 + words.mean() / np.maximum(tf.sum(0), 1))
     score = tf / np.maximum(words, 1) * idf
-    # a bigram beats its own words: drop unigrams contained in a chosen bigram
+    # two-word terms name things better ("black holes" over "black"), so they
+    # get a boost; a term sharing a word (plural or not) with a chosen one is skipped
+    score = score * np.where(np.char.count(vocab.astype(str), " ") > 0, 1.6, 1.0)[None]
+    stems = [{w.rstrip("s") for w in t.split()} for t in vocab]
     names = []
     for c in range(k):
-        best = []
-        for t in vocab[np.argsort(-score[c])[:12]]:
-            if any(t in b or b in t for b in best):
+        best, used = [], set()
+        for t in np.argsort(-score[c])[:30]:
+            if stems[t] & used:
                 continue
-            best.append(t)
+            best.append(vocab[t])
+            used |= stems[t]
             if len(best) == terms:
                 break
         names.append(" · ".join(best))
