@@ -80,7 +80,7 @@ def assign(x, c, block=65536):
     cc = (c * c).sum(1)
     out = torch.empty(len(x), dtype=torch.int64, device=x.device)
     for i in range(0, len(x), block):
-        out[i:i + block] = (cc[None] - 2 * x[i:i + block] @ c.T).argmin(1)
+        out[i:i + block] = (cc[None] - 2 * x[i:i + block].float() @ c.T).argmin(1)
     return out
 
 
@@ -97,25 +97,35 @@ def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, 
     float16 for the matrix products (half the memory: 3.3M x 384 is 2.5 GB
     instead of 5); squared norms and distances stay float32."""
     dev = device or default_device()
-    x = torch.as_tensor(x, dtype=torch.float32, device=dev)
-    if metric == "cosine":
-        x = F.normalize(x, dim=1)  # then |a - b|^2 = 2 (1 - cos)
     n = len(x)
+    # Move the points over in slices, so the full matrix never exists in
+    # float32 on the device (5 GB at 3.3M points on top of the 2.5 GB copy).
+    x = x if torch.is_tensor(x) else torch.from_numpy(x)
+    dt = torch.float16 if half else torch.float32
+    xd = torch.empty(n, x.shape[1], dtype=dt, device=dev)
+    sq = torch.empty(n, dtype=torch.float32, device=dev)
+    for i in range(0, n, 262144):
+        b = x[i:i + 262144].to(dev).float()
+        if metric == "cosine":
+            b = F.normalize(b, dim=1)  # then |a - b|^2 = 2 (1 - cos)
+        b = b.to(dt)
+        xd[i:i + len(b)] = b
+        sq[i:i + len(b)] = b.float().pow(2).sum(1)
+    x = xd
+    del xd
     lists = lists or max(1, int(n ** 0.5))
     g = torch.Generator(device="cpu").manual_seed(seed)
-    sample = x[torch.randperm(n, generator=g)[:min(n, lists * train)].to(dev)]
+    sample = x[torch.randperm(n, generator=g)[:min(n, lists * train)].to(dev)].float()
     cent = kmeans(sample, lists, seed=seed)
+    del sample
     a = assign(x, cent)
     order = torch.argsort(a)
     counts = torch.bincount(a, minlength=lists)
     starts = torch.cumsum(counts, 0) - counts
     cc = (cent * cent).sum(1)
     near = torch.topk(-(cc[:, None] + cc[None] - 2 * cent @ cent.T), min(probe, lists), dim=1).indices
-    sq = (x * x).sum(1)
-    if half:
-        x = x.half()
-        if dev == "mps":
-            torch.mps.empty_cache()
+    if dev == "mps":
+        torch.mps.empty_cache()
     out_i = torch.empty(n, k, dtype=torch.int64, device=dev)
     out_d = torch.empty(n, k, dtype=torch.float32, device=dev)
     starts_l, counts_l, near_l = starts.tolist(), counts.tolist(), near.tolist()
