@@ -84,6 +84,20 @@ def assign(x, c, block=65536):
     return out
 
 
+def top_rows(s, k, group=256):
+    """torch.topk(s, k, dim=1), largest first, in two stages: the top k of
+    each group of `group` columns, then the top k of those. Exact, since a
+    row's k largest are each among the k largest of their own group. On MPS,
+    1024 x 32768 in float16 takes 3.7 ms against 12.2 ms in one call."""
+    rows, cols = s.shape
+    if cols % group or cols < 2 * group or k > group:
+        return torch.topk(s, k, dim=1)
+    v, i = torch.topk(s.view(rows, -1, group), k, dim=2)
+    i = i + torch.arange(0, cols, group, device=s.device)[None, :, None]
+    v, j = torch.topk(v.view(rows, -1), k, dim=1)
+    return v, torch.gather(i.view(rows, -1), 1, j)
+
+
 def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, qblock=1024, cblock=65536,
             seed=0, stats=None, half=True):
     """Approximate k nearest neighbours: k-means splits the points into
@@ -95,7 +109,8 @@ def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, 
     that were not searched get worse neighbours: measure recall against
     knn() on a sample (atlas.build_arxiv does). half: keep the points in
     float16 for the matrix products (half the memory: 3.3M x 384 is 2.5 GB
-    instead of 5); squared norms and distances stay float32."""
+    instead of 5); candidates are ranked in float16 too, so near ties can
+    swap order, and the merged results are float32."""
     dev = device or default_device()
     n = len(x)
     # Move the points over in slices, so the full matrix never exists in
@@ -155,22 +170,36 @@ def ivf_knn(x, k, metric="cosine", device=None, lists=None, probe=16, train=50, 
             q = qi[q0:q0 + qblock]
             nq = len(q)
             q = padded(q, qg)
-            best_d = torch.full((len(q), k), float("inf"), device=dev)
-            best_i = torch.zeros((len(q), k), dtype=torch.int64, device=dev)
+            # Rank by a score, larger is nearer, so the block needs no
+            # float32 copy: for unit vectors the dot product itself; else
+            # q.c - |c|^2 / 2, which orders like -|q - c|^2 / 2. One extra
+            # slot holds the query itself, removed after the merge, instead
+            # of comparing every pair of indices.
+            best_s = torch.full((len(q), k + 1), float("-inf"), device=dev)
+            best_i = torch.zeros((len(q), k + 1), dtype=torch.int64, device=dev)
             for c0 in range(0, len(ci), cblock):
                 cand = ci[c0:c0 + cblock]
                 nc = len(cand)
                 cand = padded(cand, cg)
-                d = (x[q] @ x[cand].T).float().mul_(-2).add_(sq[q, None]).add_(sq[None, cand]).clamp_min_(0)
-                d.masked_fill_(q[:, None] == cand[None], float("inf"))
+                if metric == "cosine":
+                    s = x[q] @ x[cand].T  # unit vectors: |s| <= 1, fine in float16
+                else:
+                    # float16 has a step of 0.25 near 400, so products of
+                    # unnormalised points are taken in float32
+                    s = (x[q].float() @ x[cand].float().T).sub_(sq[None, cand] / 2)
                 if nc < len(cand):
-                    d[:, nc:] = float("inf")
-                kk = min(k, nc)
-                cd, pos = torch.topk(d, kk, dim=1, largest=False)
-                best_d, p2 = torch.topk(torch.cat([best_d, cd], 1), k, dim=1, largest=False)
+                    s[:, nc:] = float("-inf")
+                cs, pos = top_rows(s, min(k + 1, nc))
+                best_s, p2 = torch.topk(torch.cat([best_s, cs.float()], 1), k + 1, dim=1)
                 best_i = torch.gather(torch.cat([best_i, cand[pos]], 1), 1, p2)
-            out_i[q[:nq]], out_d[q[:nq]] = best_i[:nq], best_d[:nq]
+            best_s.masked_fill_(best_i == q[:, None], float("-inf"))
+            best_s, p2 = torch.topk(best_s, k, dim=1)
+            best_i = torch.gather(best_i, 1, p2)
+            if metric == "cosine":
+                d = (1 - best_s).clamp_min_(0)
+            else:
+                d = (sq[q, None] - 2 * best_s).clamp_min_(0).sqrt_()
+            out_i[q[:nq]], out_d[q[:nq]] = best_i[:nq], d[:nq]
     if stats is not None:
         stats.update({"lists": lists, "probe": probe, "distances": searched, "fraction of n^2": searched / n / n})
-    out_d = out_d / 2 if metric == "cosine" else out_d.sqrt()
     return out_i, out_d

@@ -7,7 +7,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from atlas.knn import ivf_knn, knn  # noqa: E402
+from atlas.knn import ivf_knn, knn, top_rows  # noqa: E402
 from atlas.layout import fuzzy_graph, umap  # noqa: E402
 
 DEVICES = ["cpu"] + (["mps"] if torch.backends.mps.is_available() else []) + (["cuda"] if torch.cuda.is_available() else [])
@@ -27,18 +27,19 @@ def test_knn_is_exact(dev, metric):
 
 @pytest.mark.parametrize("dev", DEVICES)
 @pytest.mark.parametrize("half", [False, True])
-def test_ivf_matches_exact_when_probing_every_cell(dev, half):
+@pytest.mark.parametrize("metric", ["cosine", "euclidean"])
+def test_ivf_matches_exact_when_probing_every_cell(dev, half, metric):
     if half and dev == "cpu":
         pytest.skip("float16 matmul on cpu is slow")
     rng = np.random.default_rng(1)
     x = (rng.normal(size=(20, 24)) * 4)[rng.integers(0, 20, 4000)] + rng.normal(size=(4000, 24))
     x = x.astype(np.float16 if half else np.float32)  # the arxiv build passes float16
-    ei, ed = knn(x.astype(np.float32), 10, "cosine", device=dev)
-    i, d = ivf_knn(x, 10, "cosine", device=dev, lists=16, probe=16, qblock=300, cblock=700, half=half)
+    ei, ed = knn(x.astype(np.float32), 10, metric, device=dev)
+    i, d = ivf_knn(x, 10, metric, device=dev, lists=16, probe=16, qblock=300, cblock=700, half=half)
     overlap = np.mean([len(set(a) & set(b)) / 10 for a, b in zip(i.cpu().numpy(), ei.cpu().numpy())])
     assert overlap > (0.97 if half else 0.999)  # float16 swaps near ties, so compare sets
     assert np.abs(d.cpu().numpy() - ed.cpu().numpy()).max() < (1e-3 if half else 1e-4)
-    i4, _ = ivf_knn(x, 10, "cosine", device=dev, lists=16, probe=4, half=half)
+    i4, _ = ivf_knn(x, 10, metric, device=dev, lists=16, probe=4, half=half)
     hit = np.mean([len(set(a) & set(b)) / 10 for a, b in zip(i4.cpu().numpy(), ei.cpu().numpy())])
     assert hit > 0.9  # clustered data: four of sixteen cells hold nearly all neighbours
 
@@ -64,3 +65,14 @@ def test_layout_separates_clusters():
     i, _ = knn(y, 10, "euclidean", device="cpu")
     same = (labels[i.numpy()] == labels[:, None]).mean()
     assert same > 0.99
+
+
+@pytest.mark.parametrize("dev", DEVICES)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+def test_two_stage_topk_is_exact(dev, dtype):
+    s = torch.randn(300, 4096, generator=torch.Generator().manual_seed(0)).to(dev, dtype)
+    s[:, 1000:1040] = float("-inf")  # padding, as ivf_knn masks it
+    v, i = top_rows(s, 16)
+    rv, _ = torch.topk(s, 16, dim=1)
+    assert torch.equal(v, rv)
+    assert torch.equal(torch.gather(s, 1, i), v)  # the indices point at those values
