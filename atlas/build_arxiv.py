@@ -111,9 +111,8 @@ def main():
 
     xy = stage("layout s", layout)
     labels = stage("labels s", lambda: make_labels(xy, titles, device=dev))
-    shown = [f"{ti} ({pid})" for ti, pid in zip(titles, ids)]
-    stage("export s", lambda: export(a.out, xy, cat, year, shown, arxiv.NAMES, labels,
-                                     name=f"arXiv, {len(rows):,} papers"))
+    stage("export s", lambda: export(a.out, xy, cat, year, titles, arxiv.NAMES, labels,
+                                     name=f"arXiv, {len(rows):,} papers", ids=ids, link="https://arxiv.org/abs/"))
     os.makedirs("results", exist_ok=True)
     with open(f"results/{tag}_build.json", "w") as f:
         json.dump({"papers": len(rows), "years": [int(year.min()), int(year.max())], "seconds": t,

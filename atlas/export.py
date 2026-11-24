@@ -21,10 +21,12 @@ PALETTE = ["#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b
            "#bab0ac", "#86bcb6", "#d37295", "#a0cbe8", "#ffbe7d", "#8cd17d", "#f1ce63"]
 
 
-def export(out, xy, category, year, titles, category_names, labels=(), grid=64, year0=None, name=""):
+def export(out, xy, category, year, titles, category_names, labels=(), grid=64, year0=None, name="", ids=None,
+           link=None):
     """xy: [n, 2] float; category: [n] ints into category_names; year: [n]
     ints; titles: list of n strings; labels: dicts {text, x, y, level, size}
-    in layout coordinates."""
+    in layout coordinates. With ids and a link prefix, a click on a point
+    opens link + id."""
     os.makedirs(os.path.join(out, "tiles"), exist_ok=True)
     n = len(xy)
     lo, hi = xy.min(0), xy.max(0)
@@ -43,7 +45,7 @@ def export(out, xy, category, year, titles, category_names, labels=(), grid=64, 
     rec["t"] = np.clip(np.asarray(year)[order] - year0, 0, 255)
     rec.tofile(os.path.join(out, "points.bin"))
     offsets = np.searchsorted(tile, np.arange(grid * grid + 1)).tolist()
-    titles = [titles[i] for i in order]
+    titles = [titles[i] if ids is None else [titles[i], ids[i]] for i in order]
     for t in range(grid * grid):
         a, b = offsets[t], offsets[t + 1]
         if b > a:
@@ -51,7 +53,7 @@ def export(out, xy, category, year, titles, category_names, labels=(), grid=64, 
                 json.dump(titles[a:b], f, ensure_ascii=False, separators=(",", ":"))
     counts = np.bincount(np.asarray(category), minlength=len(category_names))
     meta = {
-        "name": name, "n": n, "grid": grid, "offsets": offsets,
+        "name": name, "n": n, "grid": grid, "offsets": offsets, "link": link,
         "bounds": [float(lo[0]), float(lo[1]), span],
         "year0": year0, "year1": int(np.asarray(year).max()),
         "categories": [{"name": c, "color": PALETTE[i % len(PALETTE)], "count": int(counts[i])}
