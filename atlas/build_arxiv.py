@@ -95,6 +95,8 @@ def main():
         return i, d, st
 
     idx, dist, kst = stage("knn s", neighbours)
+    if dev == "mps":
+        torch.mps.empty_cache()
     rec = stage("recall check s", lambda: recall(emb, idx, dev=dev))
     print(f"recall@15 on 2,000 random papers: {rec:.4f}", flush=True)
 
