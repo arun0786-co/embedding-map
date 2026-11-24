@@ -30,12 +30,12 @@ def recall(x, idx, k=15, queries=2000, dev=None, seed=0):
     q = rng.choice(len(x), queries, replace=False)
     xt = torch.as_tensor(x, dtype=torch.float16, device=dev)  # the embeddings are unit length already
     hits = 0
-    for s in range(0, queries, 200):
-        qq = torch.as_tensor(q[s:s + 200], device=dev)
-        sim = (xt[qq] @ xt.T).float()
+    for s in range(0, queries, 50):  # 50 x 3.3M float16 scores is 330 MB
+        qq = torch.as_tensor(q[s:s + 50], device=dev)
+        sim = xt[qq] @ xt.T
         sim[torch.arange(len(qq), device=dev), qq] = -2
         exact = torch.topk(sim, k, dim=1).indices.cpu().numpy()
-        for a, b in zip(exact, idx[q[s:s + 200]]):
+        for a, b in zip(exact, idx[q[s:s + 50]]):
             hits += len(set(a) & set(b))
     return hits / queries / k
 
