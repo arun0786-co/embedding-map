@@ -85,7 +85,7 @@ def pca_init(x, dims=2, scale=10.0, device=None):
 
 
 def optimize(rows, cols, w, init, n_epochs=500, a=1.577, b=0.895, negative=5, lr=0.25, gamma=1.0, seed=0,
-             log=None):
+             log=None, chunk=4_000_000):
     """SGD with negative sampling. Edges whose weight is below max / n_epochs
     are never sampled, as in umap-learn.
 
@@ -109,22 +109,24 @@ def optimize(rows, cols, w, init, n_epochs=500, a=1.577, b=0.895, negative=5, lr
         if len(act) == 0:
             continue
         nxt[act] += eps[act]
-        i, j = rows[act], cols[act]
-        diff = y[i] - y[j]
-        d2 = (diff * diff).sum(1, keepdim=True)
-        coef = torch.where(d2 > 0, -2 * a * b * d2.pow(b - 1) / (a * d2.pow(b) + 1), torch.zeros_like(d2))
-        grad = (coef * diff).clamp(-4, 4) * alpha
-        y.index_add_(0, i, grad)
-        y.index_add_(0, j, -grad)
-        # negative samples: pushed away from random points
-        ii = i.repeat(negative)
-        kk = torch.randint(0, n, (len(ii),), generator=g).to(dev)
-        diff = y[ii] - y[kk]
-        d2 = (diff * diff).sum(1, keepdim=True)
-        coef = 2 * gamma * b / ((0.001 + d2) * (a * d2.pow(b) + 1))
-        grad = torch.where(d2 > 0, (coef * diff).clamp(-4, 4), torch.full_like(diff, 4.0)) * alpha
-        grad = torch.where((ii == kk)[:, None], torch.zeros_like(grad), grad)
-        y.index_add_(0, ii, grad)
+        for c0 in range(0, len(act), chunk):  # chunks bound the memory for tens of millions of edges
+            sel = act[c0:c0 + chunk]
+            i, j = rows[sel], cols[sel]
+            diff = y[i] - y[j]
+            d2 = (diff * diff).sum(1, keepdim=True)
+            coef = torch.where(d2 > 0, -2 * a * b * d2.pow(b - 1) / (a * d2.pow(b) + 1), torch.zeros_like(d2))
+            grad = (coef * diff).clamp(-4, 4) * alpha
+            y.index_add_(0, i, grad)
+            y.index_add_(0, j, -grad)
+            # negative samples: pushed away from random points
+            ii = i.repeat(negative)
+            kk = torch.randint(0, n, (len(ii),), generator=g).to(dev)
+            diff = y[ii] - y[kk]
+            d2 = (diff * diff).sum(1, keepdim=True)
+            coef = 2 * gamma * b / ((0.001 + d2) * (a * d2.pow(b) + 1))
+            grad = torch.where(d2 > 0, (coef * diff).clamp(-4, 4), torch.full_like(diff, 4.0)) * alpha
+            grad = torch.where((ii == kk)[:, None], torch.zeros_like(grad), grad)
+            y.index_add_(0, ii, grad)
         if log and (e % 50 == 0 or e == n_epochs - 1):
             log(e, len(act))
     return y
