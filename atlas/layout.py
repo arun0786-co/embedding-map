@@ -133,16 +133,23 @@ def optimize(rows, cols, w, init, n_epochs=500, a=1.577, b=0.895, negative=5, lr
 
 
 def umap(x, k=15, n_epochs=None, min_dist=0.1, spread=1.0, metric="cosine", seed=0, device=None, knn_result=None,
-         timings=None, half=False):
-    """The whole pipeline. Returns the [n, 2] layout as a numpy array."""
+         timings=None, half=False, exact_limit=200_000, probe=32):
+    """The whole pipeline. Returns the [n, 2] layout as a numpy array.
+    Neighbours are exact up to exact_limit points, IVF above."""
     import time
 
-    from .knn import knn
+    from .knn import ivf_knn, knn
 
     dev = device or default_device()
     t = {}
     s = time.perf_counter()
-    idx, dist = knn_result if knn_result is not None else knn(x, k, metric, dev, half=half)
+    if knn_result is not None:
+        idx, dist = knn_result
+    elif len(x) <= exact_limit:
+        idx, dist = knn(x, k, metric, dev, half=half)
+    else:
+        idx, dist = ivf_knn(x, k, metric, dev, probe=probe)
+    t["knn"] = "exact" if knn_result is None and len(x) <= exact_limit else f"ivf, probe {probe}"
     idx, dist = torch.as_tensor(idx, device=dev), torch.as_tensor(dist, device=dev, dtype=torch.float32)
     sync(dev)
     t["knn s"] = time.perf_counter() - s
@@ -158,6 +165,6 @@ def umap(x, k=15, n_epochs=None, min_dist=0.1, spread=1.0, metric="cosine", seed
     sync(dev)
     t["optimize s"] = time.perf_counter() - s
     if timings is not None:
-        timings.update({key: round(v, 2) for key, v in t.items()})
+        timings.update({key: round(v, 2) if isinstance(v, float) else v for key, v in t.items()})
         timings["edges"] = int(len(w))
     return y.cpu().numpy()
