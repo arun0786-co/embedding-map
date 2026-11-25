@@ -32,6 +32,10 @@ From the build log, `results/arxiv_build.json`.
 | 1M | this repo, 500 epochs | 68.2 s | 0.053 | 0.935 |
 | 1M | umap-learn | 58.3 s | 0.045 | 0.926 |
 
+![layout time and neighbours kept against umap-learn](docs/images/scale_vs_umap.png)
+
+*The table above as a chart, from `results/scale_arxiv.json`.*
+
 On MNIST (70,000 points, `results/quality_mnist.json`) the layout matches umap-learn: 2D kNN accuracy 0.970 against 0.970, trustworthiness 0.952 against 0.952. There umap-learn with PCA initialisation is faster (3.7 s against 7.8 s), mostly because this repo's neighbour search is exact below 200,000 points.
 
 The first version was slower than umap-learn at every size. How it got faster, and why batched UMAP needs a smaller learning rate than umap-learn's, is in [docs/how-it-works.md](docs/how-it-works.md).
@@ -46,6 +50,18 @@ The first version was slower than umap-learn at every size. How it got faster, a
 | 20M (synthetic) | 240 ms | 8.4 ms | 33.7 ms | 76.2 |
 
 ![zoomed into machine learning](docs/arxiv_zoom.jpg)
+
+![astrophysics at the finest label level, with a paper's tooltip](docs/images/astro_zoom_hover.jpg)
+
+*Astrophysics at 14x zoom, where the finest of the three label levels shows. Hovering a point loads its title from a lazy tile; clicking opens the abstract.*
+
+![only quantitative biology papers shown](docs/images/filter_qbio.png)
+
+*Alt-click on a category in the legend shows it alone. The largest group of quantitative biology papers sits under the "machine learning · protein" label, between the physics and machine learning regions, with smaller groups spread elsewhere.*
+
+![the map with the year slider at 2005](docs/images/year_2005.jpg)
+
+*The year slider at 2005: only papers up to that year are drawn. Physics and mathematics are already in place; the machine learning half of the map is nearly empty.*
 
 ## What was hard
 
